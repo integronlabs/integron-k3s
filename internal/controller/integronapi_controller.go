@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/yaml"
 
 	integronv1alpha1 "github.com/integronlabs/integron-k3s/api/v1alpha1"
 )
@@ -80,9 +82,51 @@ func (r *IntegronAPIReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // reconcileSpec ensures a ConfigMap holds the OpenAPI document and returns its
-// name, key and a content hash. Inline specs are managed as an owned ConfigMap;
-// an external ConfigMapRef is read for its content hash but left untouched.
+// name, key and a content hash.
+//
+// The document is resolved from inline spec.openapi or a referenced ConfigMap.
+// When BasePath is set, a relative servers entry is injected so the engine
+// serves every operation under the prefix, and the (possibly rewritten)
+// document is materialized into an owned ConfigMap. A referenced ConfigMap with
+// no BasePath is used directly (zero-copy).
 func (r *IntegronAPIReconciler) reconcileSpec(ctx context.Context, api *integronv1alpha1.IntegronAPI) (string, string, string, error) {
+	basePath := normalizeBasePath(api.Spec.BasePath)
+
+	content, err := r.resolveSpecContent(ctx, api)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	// A referenced ConfigMap with no rewriting needed is mounted as-is.
+	if ref := api.Spec.OpenAPIConfigMapRef; ref != nil && basePath == "" {
+		key := ref.Key
+		if key == "" {
+			key = specFileName
+		}
+		return ref.Name, key, hashString(content), nil
+	}
+
+	if basePath != "" {
+		content, err = withBasePath(content, basePath)
+		if err != nil {
+			return "", "", "", err
+		}
+	}
+
+	cmName := api.Name + "-spec"
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: api.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cm, func() error {
+		cm.Labels = labelsFor(api)
+		cm.Data = map[string]string{specFileName: content}
+		return controllerutil.SetControllerReference(api, cm, r.Scheme)
+	}); err != nil {
+		return "", "", "", fmt.Errorf("reconciling spec ConfigMap: %w", err)
+	}
+	return cmName, specFileName, hashString(content), nil
+}
+
+// resolveSpecContent returns the raw OpenAPI document from inline spec or a ref.
+func (r *IntegronAPIReconciler) resolveSpecContent(ctx context.Context, api *integronv1alpha1.IntegronAPI) (string, error) {
 	if ref := api.Spec.OpenAPIConfigMapRef; ref != nil {
 		key := ref.Key
 		if key == "" {
@@ -90,30 +134,18 @@ func (r *IntegronAPIReconciler) reconcileSpec(ctx context.Context, api *integron
 		}
 		var cm corev1.ConfigMap
 		if err := r.Get(ctx, types.NamespacedName{Namespace: api.Namespace, Name: ref.Name}, &cm); err != nil {
-			return "", "", "", fmt.Errorf("reading referenced ConfigMap %q: %w", ref.Name, err)
+			return "", fmt.Errorf("reading referenced ConfigMap %q: %w", ref.Name, err)
 		}
 		content, ok := cm.Data[key]
 		if !ok {
-			return "", "", "", fmt.Errorf("ConfigMap %q has no key %q", ref.Name, key)
+			return "", fmt.Errorf("ConfigMap %q has no key %q", ref.Name, key)
 		}
-		return ref.Name, key, hashString(content), nil
+		return content, nil
 	}
-
 	if api.Spec.OpenAPI == "" {
-		return "", "", "", fmt.Errorf("one of spec.openapi or spec.openapiConfigMapRef must be set")
+		return "", fmt.Errorf("one of spec.openapi or spec.openapiConfigMapRef must be set")
 	}
-
-	cmName := api.Name + "-spec"
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: api.Namespace}}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, cm, func() error {
-		cm.Labels = labelsFor(api)
-		cm.Data = map[string]string{specFileName: api.Spec.OpenAPI}
-		return controllerutil.SetControllerReference(api, cm, r.Scheme)
-	})
-	if err != nil {
-		return "", "", "", fmt.Errorf("reconciling spec ConfigMap: %w", err)
-	}
-	return cmName, specFileName, hashString(api.Spec.OpenAPI), nil
+	return api.Spec.OpenAPI, nil
 }
 
 func (r *IntegronAPIReconciler) reconcileDeployment(ctx context.Context, api *integronv1alpha1.IntegronAPI, cmName, cmKey, specHash string) error {
@@ -206,7 +238,11 @@ func (r *IntegronAPIReconciler) reconcileIngress(ctx context.Context, api *integ
 	in := api.Spec.Ingress
 	path := in.Path
 	if path == "" {
-		path = "/"
+		if bp := normalizeBasePath(api.Spec.BasePath); bp != "" {
+			path = bp
+		} else {
+			path = "/"
+		}
 	}
 	pathType := networkingv1.PathType(in.PathType)
 	if pathType == "" {
@@ -299,4 +335,33 @@ func labelsFor(api *integronv1alpha1.IntegronAPI) map[string]string {
 func hashString(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+
+// normalizeBasePath returns a clean "/prefix" form, or "" for root.
+func normalizeBasePath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" || p == "/" {
+		return ""
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return strings.TrimRight(p, "/")
+}
+
+// withBasePath rewrites the OpenAPI document's servers to a single relative URL
+// equal to basePath, so integron's router serves every operation beneath it.
+// The steps array order is preserved (object keys may be reordered, which is
+// semantically irrelevant for OpenAPI).
+func withBasePath(content, basePath string) (string, error) {
+	var doc map[string]interface{}
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return "", fmt.Errorf("parsing OpenAPI document: %w", err)
+	}
+	doc["servers"] = []interface{}{map[string]interface{}{"url": basePath}}
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("serializing OpenAPI document: %w", err)
+	}
+	return string(out), nil
 }

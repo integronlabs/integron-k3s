@@ -59,6 +59,12 @@ spec:
                     key:
                       type: string
                       default: openapi.yaml
+                basePath:
+                  type: string
+                  description: >-
+                    Mount the whole API under this path prefix (e.g. /dogfacts)
+                    so many APIs can share one Ingress host. The operator injects
+                    a matching relative servers entry into the OpenAPI document.
                 image:
                   type: string
                   default: ghcr.io/integronlabs/integron-k3s/engine:latest

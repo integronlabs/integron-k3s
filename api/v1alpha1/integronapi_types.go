@@ -20,6 +20,14 @@ type IntegronAPISpec struct {
 	// +optional
 	OpenAPIConfigMapRef *ConfigMapKeyRef `json:"openapiConfigMapRef,omitempty"`
 
+	// BasePath mounts the whole API under a path prefix (e.g. "/dogfacts"),
+	// letting many APIs share a single Ingress host. The operator injects a
+	// matching relative servers entry into the OpenAPI document so the engine
+	// serves every operation under the prefix; the generated Ingress routes
+	// that prefix to the engine. Leave empty to serve at the root.
+	// +optional
+	BasePath string `json:"basePath,omitempty"`
+
 	// Image is the integron engine container image to run.
 	// +kubebuilder:default="ghcr.io/integronlabs/integron-k3s/engine:latest"
 	// +optional
@@ -58,11 +66,12 @@ type ConfigMapKeyRef struct {
 
 // IngressSpec configures optional Ingress exposure for the API.
 type IngressSpec struct {
-	// Host is the hostname to route to the API.
+	// Host is the hostname to route to the API. Many IntegronAPIs may share the
+	// same Host as long as each uses a distinct BasePath.
 	Host string `json:"host"`
 
-	// Path prefix for the API.
-	// +kubebuilder:default="/"
+	// Path is the Ingress path prefix. Defaults to BasePath when set, otherwise
+	// "/". Usually you only set BasePath and leave this empty.
 	// +optional
 	Path string `json:"path,omitempty"`
 

@@ -115,6 +115,7 @@ spec:
 | --- | --- | --- |
 | `spec.openapi` | — | Inline OpenAPI 3 document (with `x-integron-steps`). |
 | `spec.openapiConfigMapRef` | — | Alternatively, reference an existing ConfigMap (`name`, `key`). |
+| `spec.basePath` | — | Mount the API under a path prefix (e.g. `/dogfacts`) so many APIs share one host. See below. |
 | `spec.image` | `…/engine:latest` | Engine image to run. |
 | `spec.imagePullPolicy` | `IfNotPresent` | |
 | `spec.replicas` | `1` | Engine pod count. |
@@ -122,6 +123,50 @@ spec:
 | `spec.resources` | — | Standard pod resource requirements. |
 
 Exactly one of `spec.openapi` / `spec.openapiConfigMapRef` is required.
+
+## Hosting many APIs on one host
+
+Set `spec.basePath` to mount each API under a path prefix and point every
+`IntegronAPI` at the **same** `spec.ingress.host`:
+
+```yaml
+# dogfacts
+spec:
+  basePath: /dogfacts
+  ingress: { host: apis.local }
+---
+# echo
+spec:
+  basePath: /echo
+  ingress: { host: apis.local }
+```
+
+```
+            apis.local            (one Ingress host, any controller)
+              ├── /dogfacts/*  ─▶ dogfacts engine   (GET /dogfacts/facts)
+              └── /echo/*      ─▶ echo engine        (GET /echo/ping)
+```
+
+How it works: the operator injects a relative `servers: [{ url: /dogfacts }]`
+entry into the OpenAPI document, so integron's router natively serves every
+operation **under** the prefix. The generated Ingress is a plain host+path rule
+— **no prefix-stripping middleware, no controller-specific annotations**, so it
+works the same on Traefik (k3s default), nginx, or any other controller. The
+prefix also applies to in-cluster calls: `http://dogfacts.default.svc/dogfacts/facts`.
+
+There's no hard limit on how many APIs share a host — each is an independent
+`IntegronAPI` with its own Ingress rule for the shared host, which controllers
+merge. Try it: `kubectl apply -f config/samples/dogfacts.yaml -f config/samples/second-api-same-host.yaml`.
+
+### Scaling note: one engine pod per API
+
+Each `IntegronAPI` runs its own integron Deployment (integron loads a single
+spec per process). Hundreds of APIs therefore means hundreds of pods. To keep
+that affordable: keep `spec.replicas: 1` and set small `spec.resources`
+requests (each engine is a tiny static Go binary). If you need to pack
+thousands of mostly-idle APIs onto a node, the next step would be either
+scale-to-zero (e.g. KEDA/Knative) or a shared multi-spec engine — happy to
+explore either; it's not wired up today.
 
 ## Develop the operator
 
