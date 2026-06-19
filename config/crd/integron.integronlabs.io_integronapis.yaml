@@ -63,8 +63,9 @@ spec:
                   type: string
                   description: >-
                     Mount the whole API under this path prefix (e.g. /dogfacts)
-                    so many APIs can share one Ingress host. The operator injects
-                    a matching relative servers entry into the OpenAPI document.
+                    so many APIs can share one Ingress host. The operator rewrites
+                    the document's servers to this relative path. Defaults to
+                    "/<name>"; the engine cannot serve at the bare root.
                 image:
                   type: string
                   default: ghcr.io/integronlabs/integron-k3s/engine:latest
