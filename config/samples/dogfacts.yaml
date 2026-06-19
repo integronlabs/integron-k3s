@@ -6,10 +6,12 @@ metadata:
 spec:
   replicas: 1
   # image: ghcr.io/integronlabs/integron-k3s/engine:latest   # default
+  # Mount under /dogfacts on a shared host. The operator injects a matching
+  # relative `servers` entry, so the engine serves GET /dogfacts/facts.
+  basePath: /dogfacts
   ingress:
-    host: dogfacts.local
-    path: /
-    # className: traefik   # k3s ships Traefik by default
+    host: apis.local        # shared across many APIs
+    # path defaults to basePath; className optional (k3s ships Traefik)
   openapi: |
     openapi: 3.0.3
     info:

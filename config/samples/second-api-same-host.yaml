@@ -1,0 +1,38 @@
+# A second API sharing the SAME Ingress host (apis.local) as dogfacts, mounted
+# under a different basePath. Apply both and call:
+#   curl http://apis.local/dogfacts/facts?amount=3
+#   curl http://apis.local/echo/ping
+apiVersion: integron.integronlabs.io/v1alpha1
+kind: IntegronAPI
+metadata:
+  name: echo
+  namespace: default
+spec:
+  replicas: 1
+  basePath: /echo
+  ingress:
+    host: apis.local
+  openapi: |
+    openapi: 3.0.3
+    info:
+      title: Echo
+      version: 1.0.0
+    paths:
+      /ping:
+        get:
+          operationId: ping
+          responses:
+            '200':
+              description: pong
+            '500':
+              description: error
+          x-integron-steps:
+            - name: responseMarshal
+              type: transformobject
+              output:
+                body:
+                  message: "pong"
+              next: ""
+            - name: error
+              type: error
+              next: ""
