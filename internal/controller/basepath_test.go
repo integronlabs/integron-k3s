@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"sigs.k8s.io/yaml"
+
+	integronv1alpha1 "github.com/integronlabs/integron-k3s/api/v1alpha1"
 )
 
 const sampleSpec = `openapi: 3.0.3
@@ -53,6 +55,26 @@ func TestNormalizeBasePath(t *testing.T) {
 	for in, want := range cases {
 		if got := normalizeBasePath(in); got != want {
 			t.Errorf("normalizeBasePath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestEffectiveBasePath(t *testing.T) {
+	mk := func(name, bp string) *integronv1alpha1.IntegronAPI {
+		a := &integronv1alpha1.IntegronAPI{}
+		a.Name = name
+		a.Spec.BasePath = bp
+		return a
+	}
+	cases := []struct{ name, bp, want string }{
+		{"dogfacts", "", "/dogfacts"},        // default to /<name>
+		{"dogfacts", "/", "/dogfacts"},       // "/" is root => default
+		{"dogfacts", "/v1/dogs", "/v1/dogs"}, // explicit wins
+		{"echo", "echo", "/echo"},            // normalized
+	}
+	for _, c := range cases {
+		if got := effectiveBasePath(mk(c.name, c.bp)); got != c.want {
+			t.Errorf("effectiveBasePath(name=%q, basePath=%q) = %q, want %q", c.name, c.bp, got, c.want)
 		}
 	}
 }

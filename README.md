@@ -50,9 +50,9 @@ make install             # kubectl apply -k config
 make sample              # applies config/samples/dogfacts.yaml
 kubectl get integronapi  # shows replicas / ready / url
 
-# 4. Call it (via the Service, or the Ingress host if DNS/hosts is set up)
+# 4. Call it (note the /dogfacts prefix — every API is mounted under one)
 kubectl run curl --rm -it --image=curlimages/curl --restart=Never -- \
-  curl -s "http://dogfacts.default.svc/facts?amount=3"
+  curl -s "http://dogfacts.default.svc/dogfacts/facts?amount=3"
 ```
 
 When pushing images to a registry instead of importing into k3s, override the
@@ -115,7 +115,7 @@ spec:
 | --- | --- | --- |
 | `spec.openapi` | — | Inline OpenAPI 3 document (with `x-integron-steps`). |
 | `spec.openapiConfigMapRef` | — | Alternatively, reference an existing ConfigMap (`name`, `key`). |
-| `spec.basePath` | — | Mount the API under a path prefix (e.g. `/dogfacts`) so many APIs share one host. See below. |
+| `spec.basePath` | `/<name>` | Mount the API under a path prefix (e.g. `/dogfacts`) so many APIs share one host. See below. |
 | `spec.image` | `…/engine:latest` | Engine image to run. |
 | `spec.imagePullPolicy` | `IfNotPresent` | |
 | `spec.replicas` | `1` | Engine pod count. |
@@ -147,12 +147,19 @@ spec:
               └── /echo/*      ─▶ echo engine        (GET /echo/ping)
 ```
 
-How it works: the operator injects a relative `servers: [{ url: /dogfacts }]`
-entry into the OpenAPI document, so integron's router natively serves every
-operation **under** the prefix. The generated Ingress is a plain host+path rule
-— **no prefix-stripping middleware, no controller-specific annotations**, so it
-works the same on Traefik (k3s default), nginx, or any other controller. The
-prefix also applies to in-cluster calls: `http://dogfacts.default.svc/dogfacts/facts`.
+How it works: the operator rewrites the document's `servers` to a single
+relative entry `servers: [{ url: /dogfacts }]`, so integron's router natively
+serves every operation **under** the prefix. The generated Ingress is a plain
+host+path rule — **no prefix-stripping middleware, no controller-specific
+annotations**, so it works the same on Traefik (k3s default), nginx, or any
+other controller. The prefix also applies to in-cluster calls:
+`http://dogfacts.default.svc/dogfacts/facts`.
+
+> **Every API is mounted under a prefix.** integron's router will not match
+> routes at the bare root, so `spec.basePath` defaults to `/<name>` and the
+> operator always manages the `servers` field — any `servers` you put in the
+> document is replaced. Requests without the prefix return `404 Method not
+> found`.
 
 There's no hard limit on how many APIs share a host — each is an independent
 `IntegronAPI` with its own Ingress rule for the shared host, which controllers

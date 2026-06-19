@@ -87,30 +87,19 @@ func (r *IntegronAPIReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // The document is resolved from inline spec.openapi or a referenced ConfigMap.
 // When BasePath is set, a relative servers entry is injected so the engine
 // serves every operation under the prefix, and the (possibly rewritten)
-// document is materialized into an owned ConfigMap. A referenced ConfigMap with
-// no BasePath is used directly (zero-copy).
+// document is always materialized into an owned ConfigMap with its servers
+// rewritten to the effective base path: integron's router requires a servers
+// entry with a non-empty path to match routes, so every API is mounted under a
+// prefix (BasePath, or "/<name>" by default).
 func (r *IntegronAPIReconciler) reconcileSpec(ctx context.Context, api *integronv1alpha1.IntegronAPI) (string, string, string, error) {
-	basePath := normalizeBasePath(api.Spec.BasePath)
-
 	content, err := r.resolveSpecContent(ctx, api)
 	if err != nil {
 		return "", "", "", err
 	}
 
-	// A referenced ConfigMap with no rewriting needed is mounted as-is.
-	if ref := api.Spec.OpenAPIConfigMapRef; ref != nil && basePath == "" {
-		key := ref.Key
-		if key == "" {
-			key = specFileName
-		}
-		return ref.Name, key, hashString(content), nil
-	}
-
-	if basePath != "" {
-		content, err = withBasePath(content, basePath)
-		if err != nil {
-			return "", "", "", err
-		}
+	content, err = withBasePath(content, effectiveBasePath(api))
+	if err != nil {
+		return "", "", "", err
 	}
 
 	cmName := api.Name + "-spec"
@@ -238,11 +227,7 @@ func (r *IntegronAPIReconciler) reconcileIngress(ctx context.Context, api *integ
 	in := api.Spec.Ingress
 	path := in.Path
 	if path == "" {
-		if bp := normalizeBasePath(api.Spec.BasePath); bp != "" {
-			path = bp
-		} else {
-			path = "/"
-		}
+		path = effectiveBasePath(api)
 	}
 	pathType := networkingv1.PathType(in.PathType)
 	if pathType == "" {
@@ -337,7 +322,7 @@ func hashString(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// normalizeBasePath returns a clean "/prefix" form, or "" for root.
+// normalizeBasePath returns a clean "/prefix" form, or "" when unset.
 func normalizeBasePath(p string) string {
 	p = strings.TrimSpace(p)
 	if p == "" || p == "/" {
@@ -347,6 +332,15 @@ func normalizeBasePath(p string) string {
 		p = "/" + p
 	}
 	return strings.TrimRight(p, "/")
+}
+
+// effectiveBasePath is the prefix the API is mounted under. integron cannot
+// serve at the bare root, so an unset BasePath defaults to "/<name>".
+func effectiveBasePath(api *integronv1alpha1.IntegronAPI) string {
+	if bp := normalizeBasePath(api.Spec.BasePath); bp != "" {
+		return bp
+	}
+	return "/" + api.Name
 }
 
 // withBasePath rewrites the OpenAPI document's servers to a single relative URL

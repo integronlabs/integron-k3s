@@ -21,10 +21,13 @@ type IntegronAPISpec struct {
 	OpenAPIConfigMapRef *ConfigMapKeyRef `json:"openapiConfigMapRef,omitempty"`
 
 	// BasePath mounts the whole API under a path prefix (e.g. "/dogfacts"),
-	// letting many APIs share a single Ingress host. The operator injects a
-	// matching relative servers entry into the OpenAPI document so the engine
-	// serves every operation under the prefix; the generated Ingress routes
-	// that prefix to the engine. Leave empty to serve at the root.
+	// letting many APIs share a single Ingress host. The operator rewrites the
+	// document's servers to this relative path so the engine serves every
+	// operation beneath it, and routes the Ingress prefix to the engine.
+	//
+	// Defaults to "/<name>" when unset. The engine cannot serve at the bare
+	// root, so every API is mounted under some prefix. The servers field of the
+	// supplied document is always managed by the operator.
 	// +optional
 	BasePath string `json:"basePath,omitempty"`
 
