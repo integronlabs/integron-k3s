@@ -32,6 +32,10 @@ spec:
       containers:
         - name: manager
           image: ghcr.io/integronlabs/integron-k3s/operator:latest
+          # IfNotPresent so locally-built images imported via `make k3s-import`
+          # are used instead of being re-pulled from the registry (the :latest
+          # tag would otherwise default to Always).
+          imagePullPolicy: IfNotPresent
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
