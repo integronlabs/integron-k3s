@@ -1,0 +1,8 @@
+# Convenience kustomization that installs the CRD, RBAC and operator together:
+#   kubectl apply -k config
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - crd/integron.integronlabs.io_integronapis.yaml
+  - rbac/role.yaml
+  - manager/manager.yaml
