@@ -1,0 +1,64 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: integron-operator
+rules:
+  - apiGroups: ["integron.integronlabs.io"]
+    resources: ["integronapis"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["integron.integronlabs.io"]
+    resources: ["integronapis/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["integron.integronlabs.io"]
+    resources: ["integronapis/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: integron-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: integron-operator
+subjects:
+  - kind: ServiceAccount
+    name: integron-operator
+    namespace: integron-system
+---
+# Leader-election lease, scoped to the operator namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: integron-operator-leader-election
+  namespace: integron-system
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: integron-operator-leader-election
+  namespace: integron-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: integron-operator-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: integron-operator
+    namespace: integron-system

@@ -1,0 +1,16 @@
+# Build the integron engine image from the published module. The engine loads
+# an OpenAPI spec (default docs/openapi.yaml) and serves the orchestrated API on
+# :8080. The operator mounts the spec ConfigMap at /app/docs/openapi.yaml.
+FROM golang:1.24-alpine AS build
+RUN apk add --no-cache git
+ARG INTEGRON_VERSION=v0.1.13
+ENV CGO_ENABLED=0 GOBIN=/out
+RUN go install "github.com/integronlabs/integron@${INTEGRON_VERSION}"
+
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /app
+COPY --from=build /out/integron /usr/local/bin/integron
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/integron"]
+CMD ["-spec", "docs/openapi.yaml"]

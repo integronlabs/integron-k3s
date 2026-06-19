@@ -1,0 +1,110 @@
+apiVersion: integron.integronlabs.io/v1alpha1
+kind: IntegronAPI
+metadata:
+  name: dogfacts
+  namespace: default
+spec:
+  replicas: 1
+  # image: ghcr.io/integronlabs/integron-k3s/engine:latest   # default
+  ingress:
+    host: dogfacts.local
+    path: /
+    # className: traefik   # k3s ships Traefik by default
+  openapi: |
+    openapi: 3.0.3
+    info:
+      title: Integron Dog Facts - OpenAPI 3.0
+      description: This is an OpenAPI 3.0 specification for the Integron Dog Facts API.
+      contact:
+        email: moha@moha.fi
+      version: 1.0.0
+    tags:
+      - name: dogFacts
+        description: Dog Facts
+    servers:
+      - url: http://localhost:8080
+    paths:
+      /facts:
+        get:
+          summary: Get a random dog fact
+          description: Retrieve a random dog fact from the Dog Facts API
+          operationId: getDogFact
+          tags:
+            - dogFacts
+          parameters:
+            - name: amount
+              in: query
+              required: true
+              schema:
+                type: integer
+              description: Number of facts to retrieve
+              example: 5
+          responses:
+            '200':
+              description: A JSON object containing dog facts
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - fact
+                            - id
+                          properties:
+                            fact:
+                              type: string
+                              example: "Although it was once illegal to keep dogs as pets in Iceland's capital city, the laws have been relaxed."
+                            id:
+                              type: string
+                              example: "9ed6fa65-8645-4cea-8124-372fc59788d2"
+            '400':
+              description: Invalid data
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Invalid data"
+            '500':
+              description: Internal server error
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Internal server error"
+          x-integron-steps:
+            - name: dogFacts
+              type: http
+              url: 'https://dogapi.dog/api/v2/facts?limit=$.request.amount'
+              method: GET
+              responses:
+                '200':
+                  output:
+                    response: $.body
+                    status: $.status
+                  next: "arrayTransform"
+            - name: arrayTransform
+              type: transformarray
+              input: $.dogFacts.response.data
+              output:
+                fact: $.attributes.body
+                id: $.id
+              next: "responseMarshal"
+            - name: responseMarshal
+              type: transformobject
+              output:
+                body:
+                  data: $.arrayTransform
+              next: ""
+            - name: error
+              type: error
+              next: ""
