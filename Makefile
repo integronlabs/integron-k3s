@@ -2,7 +2,7 @@
 
 OPERATOR_IMG ?= ghcr.io/integronlabs/integron-k3s/operator:latest
 ENGINE_IMG   ?= ghcr.io/integronlabs/integron-k3s/engine:latest
-INTEGRON_VERSION ?= v0.1.13
+INTEGRON_VERSION ?= v0.2.0
 
 .PHONY: help
 help: ## Show this help.
