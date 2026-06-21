@@ -18,7 +18,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strconv"
@@ -28,10 +27,12 @@ import (
 
 	"github.com/integronlabs/integron-async/asyncapi"
 	"github.com/integronlabs/integron-async/engine"
+	"github.com/integronlabs/integron-async/helpers"
 	kafka "github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/plain"
 	"github.com/segmentio/kafka-go/sasl/scram"
+	"github.com/sirupsen/logrus"
 )
 
 // partitionWatchInterval is how often the reader polls for partition changes
@@ -59,22 +60,24 @@ type config struct {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.LUTC)
+	// Configure logging the same way the engine expects: honors LOG_LEVEL
+	// (debug surfaces each workflow step) and matches the engine's JSON format.
+	helpers.SetupLogging()
 
 	cfg, err := loadConfig()
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		logrus.Fatalf("config: %v", err)
 	}
 
 	eng, topics, err := buildEngine(cfg)
 	if err != nil {
-		log.Fatalf("engine: %v", err)
+		logrus.Fatalf("engine: %v", err)
 	}
-	log.Printf("subscribing to topics %v (group %q) on %v", topics, cfg.groupID, cfg.brokers)
+	logrus.Infof("subscribing to topics %v (group %q) on %v", topics, cfg.groupID, cfg.brokers)
 
 	dialer, err := buildDialer(cfg)
 	if err != nil {
-		log.Fatalf("kafka dialer: %v", err)
+		logrus.Fatalf("kafka dialer: %v", err)
 	}
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
@@ -101,9 +104,9 @@ func main() {
 	defer stop()
 
 	if err := run(ctx, reader, eng, cfg); err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatalf("consumer: %v", err)
+		logrus.Fatalf("consumer: %v", err)
 	}
-	log.Printf("shutting down")
+	logrus.Info("shutting down")
 }
 
 // run is the consume loop: collect a batch, process it, commit accepted offsets.
@@ -120,7 +123,7 @@ func run(ctx context.Context, reader *kafka.Reader, eng *engine.Engine, cfg conf
 		resp := eng.ProcessBatch(ctx, toRecords(msgs))
 		committable, ok := committableMessages(msgs, resp)
 		if !ok {
-			log.Printf("could not interpret batch failures; leaving %d messages uncommitted for retry", len(msgs))
+			logrus.Warnf("could not interpret batch failures; leaving %d messages uncommitted for retry", len(msgs))
 		}
 		if len(committable) > 0 {
 			// Use a fresh context so a shutdown signal does not abort the commit
@@ -132,8 +135,12 @@ func run(ctx context.Context, reader *kafka.Reader, eng *engine.Engine, cfg conf
 			}
 			cancel()
 		}
-		if n := len(resp.BatchItemFailures); n > 0 {
-			log.Printf("processed %d messages, %d committed, %d failed (will be redelivered)", len(msgs), len(committable), n)
+		// Always report the outcome: a committed message is one the workflow ran
+		// to completion (a failed step leaves its offset uncommitted, below).
+		if failed := len(resp.BatchItemFailures); failed > 0 {
+			logrus.Infof("processed %d messages: %d committed, %d failed (will be redelivered)", len(msgs), len(committable), failed)
+		} else {
+			logrus.Infof("processed %d messages: all %d committed", len(msgs), len(committable))
 		}
 
 		if err != nil {

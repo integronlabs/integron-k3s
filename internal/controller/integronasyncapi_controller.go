@@ -222,6 +222,9 @@ func asyncEnv(api *integronv1alpha1.IntegronAsyncAPI, topics []string) []corev1.
 		{Name: "KAFKA_GROUP_ID", Value: groupID},
 		{Name: "KAFKA_TOPICS", Value: joinComma(topics)},
 	}
+	if api.Spec.LogLevel != "" {
+		env = append(env, corev1.EnvVar{Name: "LOG_LEVEL", Value: api.Spec.LogLevel})
+	}
 	if k.MinBytes > 0 {
 		env = append(env, corev1.EnvVar{Name: "KAFKA_MIN_BYTES", Value: strconv.Itoa(int(k.MinBytes))})
 	}

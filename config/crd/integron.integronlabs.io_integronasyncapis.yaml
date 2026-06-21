@@ -160,6 +160,10 @@ spec:
                   format: int32
                   default: 1
                   minimum: 0
+                logLevel:
+                  type: string
+                  description: Consumer/engine log verbosity. Use debug to log each workflow step.
+                  enum: [debug, info, warn, error, fatal, panic]
                 resources:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true

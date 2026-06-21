@@ -50,6 +50,12 @@ type IntegronAsyncAPISpec struct {
 	// Resources are the compute resources for the consumer container.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// LogLevel sets the consumer and engine log verbosity. Defaults to info;
+	// use debug to log each workflow step (the HTTP call, transforms) as it runs.
+	// +kubebuilder:validation:Enum=debug;info;warn;error;fatal;panic
+	// +optional
+	LogLevel string `json:"logLevel,omitempty"`
 }
 
 // KafkaSpec configures the Kafka connection for an async consumer.

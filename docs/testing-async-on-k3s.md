@@ -117,8 +117,32 @@ echo '{"amount":3}' | kubectl exec -i "$KPOD" -- \
   --bootstrap-server localhost:9092 --topic dogfact-requests-topic
 ```
 
-The consumer log should show it picked up the message, ran the `http` step
-against the dog API, and logged `processed 1 messages, 1 committed`.
+The consumer log should show it picked up the message and logged
+`processed 1 messages: all 1 committed`. A **committed** message is the
+positive signal that the workflow ran to completion — a failed step leaves its
+offset *uncommitted* and the log instead reads `… N committed, M failed (will be
+redelivered)`.
+
+### Seeing each workflow step run
+
+The `processed …: all N committed` line proves the pipeline finished without
+error, but it doesn't show the individual steps. To watch the engine execute
+each step (the HTTP request, array/object transforms), turn on debug logging —
+this is read from `LOG_LEVEL` by both the consumer and the engine:
+
+```sh
+kubectl patch integronasyncapi dogfacts-async --type=merge -p '{"spec":{"logLevel":"debug"}}'
+kubectl rollout status deploy/dogfacts-async
+kubectl logs -f deploy/dogfacts-async
+```
+
+The engine logs `Processing message: topic=… offset=…` (at info, on dequeue),
+then per-step debug lines, and a step failure surfaces at warn/error with the
+recovery step. Set `logLevel` back to `info` (or remove it) when done — debug is
+verbose.
+
+> The engine emits structured JSON logs (it calls `helpers.SetupLogging()`),
+> so `kubectl logs … | jq` works for filtering.
 
 ## 6. Verify offset commits and group balancing
 
