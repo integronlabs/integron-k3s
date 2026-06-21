@@ -34,6 +34,10 @@ import (
 	"github.com/segmentio/kafka-go/sasl/scram"
 )
 
+// partitionWatchInterval is how often the reader polls for partition changes
+// (topic creation, partition growth) to trigger a group rebalance.
+const partitionWatchInterval = 15 * time.Second
+
 // config is the consumer's runtime configuration, sourced from flags and env.
 type config struct {
 	specPath  string
@@ -83,6 +87,13 @@ func main() {
 		// Manual, synchronous commits: we commit only the offsets the engine
 		// accepted, so a non-zero CommitInterval would defeat selective retry.
 		CommitInterval: 0,
+		// Poll for partition changes and rebalance when they happen. Without
+		// this, a consumer that joins before its topic exists caches an empty
+		// assignment and never picks the partitions up — it would need a manual
+		// restart once the topic is auto-created. The watcher also handles a
+		// topic's partition count growing at runtime.
+		WatchPartitionChanges:  true,
+		PartitionWatchInterval: partitionWatchInterval,
 	})
 	defer reader.Close()
 
