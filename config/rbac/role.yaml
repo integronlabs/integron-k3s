@@ -4,13 +4,13 @@ metadata:
   name: integron-operator
 rules:
   - apiGroups: ["integron.integronlabs.io"]
-    resources: ["integronapis"]
+    resources: ["integronapis", "integronasyncapis"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["integron.integronlabs.io"]
-    resources: ["integronapis/status"]
+    resources: ["integronapis/status", "integronasyncapis/status"]
     verbs: ["get", "update", "patch"]
   - apiGroups: ["integron.integronlabs.io"]
-    resources: ["integronapis/finalizers"]
+    resources: ["integronapis/finalizers", "integronasyncapis/finalizers"]
     verbs: ["update"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -18,6 +18,11 @@ rules:
   - apiGroups: [""]
     resources: ["services", "configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # The async consumer reads SASL credentials / TLS CA from referenced Secrets;
+  # the operator only needs to read them to wire the Deployment.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

@@ -1,0 +1,16 @@
+# Build the integron async consumer: a long-lived Kafka consumer that runs
+# integron-async workflows per message. It loads an AsyncAPI spec (default
+# docs/asyncapi.yaml), which the operator mounts at /app/docs/asyncapi.yaml.
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/async-consumer ./cmd/async-consumer
+
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /app
+COPY --from=build /out/async-consumer /usr/local/bin/async-consumer
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/async-consumer"]
+CMD ["-spec", "docs/asyncapi.yaml"]

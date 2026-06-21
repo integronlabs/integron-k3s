@@ -25,6 +25,206 @@ func (in *ConfigMapKeyRef) DeepCopy() *ConfigMapKeyRef {
 }
 
 // DeepCopyInto copies the receiver into out.
+func (in *SecretKeyRef) DeepCopyInto(out *SecretKeyRef) {
+	*out = *in
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *SecretKeyRef) DeepCopy() *SecretKeyRef {
+	if in == nil {
+		return nil
+	}
+	out := new(SecretKeyRef)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto copies the receiver into out.
+func (in *KafkaTLS) DeepCopyInto(out *KafkaTLS) {
+	*out = *in
+	if in.CASecretRef != nil {
+		in, out := &in.CASecretRef, &out.CASecretRef
+		*out = new(SecretKeyRef)
+		**out = **in
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *KafkaTLS) DeepCopy() *KafkaTLS {
+	if in == nil {
+		return nil
+	}
+	out := new(KafkaTLS)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto copies the receiver into out.
+func (in *KafkaSASL) DeepCopyInto(out *KafkaSASL) {
+	*out = *in
+	out.UsernameSecretRef = in.UsernameSecretRef
+	out.PasswordSecretRef = in.PasswordSecretRef
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *KafkaSASL) DeepCopy() *KafkaSASL {
+	if in == nil {
+		return nil
+	}
+	out := new(KafkaSASL)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto copies the receiver into out.
+func (in *KafkaSpec) DeepCopyInto(out *KafkaSpec) {
+	*out = *in
+	if in.Brokers != nil {
+		in, out := &in.Brokers, &out.Brokers
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.Topics != nil {
+		in, out := &in.Topics, &out.Topics
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.TLS != nil {
+		in, out := &in.TLS, &out.TLS
+		*out = new(KafkaTLS)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.SASL != nil {
+		in, out := &in.SASL, &out.SASL
+		*out = new(KafkaSASL)
+		(*in).DeepCopyInto(*out)
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *KafkaSpec) DeepCopy() *KafkaSpec {
+	if in == nil {
+		return nil
+	}
+	out := new(KafkaSpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto copies the receiver into out.
+func (in *IntegronAsyncAPISpec) DeepCopyInto(out *IntegronAsyncAPISpec) {
+	*out = *in
+	if in.AsyncAPIConfigMapRef != nil {
+		in, out := &in.AsyncAPIConfigMapRef, &out.AsyncAPIConfigMapRef
+		*out = new(ConfigMapKeyRef)
+		**out = **in
+	}
+	in.Kafka.DeepCopyInto(&out.Kafka)
+	if in.Replicas != nil {
+		in, out := &in.Replicas, &out.Replicas
+		*out = new(int32)
+		**out = **in
+	}
+	in.Resources.DeepCopyInto(&out.Resources)
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *IntegronAsyncAPISpec) DeepCopy() *IntegronAsyncAPISpec {
+	if in == nil {
+		return nil
+	}
+	out := new(IntegronAsyncAPISpec)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto copies the receiver into out.
+func (in *IntegronAsyncAPIStatus) DeepCopyInto(out *IntegronAsyncAPIStatus) {
+	*out = *in
+	if in.Conditions != nil {
+		in, out := &in.Conditions, &out.Conditions
+		*out = make([]metav1.Condition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.Topics != nil {
+		in, out := &in.Topics, &out.Topics
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *IntegronAsyncAPIStatus) DeepCopy() *IntegronAsyncAPIStatus {
+	if in == nil {
+		return nil
+	}
+	out := new(IntegronAsyncAPIStatus)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto copies the receiver into out.
+func (in *IntegronAsyncAPI) DeepCopyInto(out *IntegronAsyncAPI) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	in.Spec.DeepCopyInto(&out.Spec)
+	in.Status.DeepCopyInto(&out.Status)
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *IntegronAsyncAPI) DeepCopy() *IntegronAsyncAPI {
+	if in == nil {
+		return nil
+	}
+	out := new(IntegronAsyncAPI)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject returns a runtime.Object copy of the receiver.
+func (in *IntegronAsyncAPI) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// DeepCopyInto copies the receiver into out.
+func (in *IntegronAsyncAPIList) DeepCopyInto(out *IntegronAsyncAPIList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]IntegronAsyncAPI, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+// DeepCopy returns a deep copy of the receiver.
+func (in *IntegronAsyncAPIList) DeepCopy() *IntegronAsyncAPIList {
+	if in == nil {
+		return nil
+	}
+	out := new(IntegronAsyncAPIList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject returns a runtime.Object copy of the receiver.
+func (in *IntegronAsyncAPIList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// DeepCopyInto copies the receiver into out.
 func (in *IngressSpec) DeepCopyInto(out *IngressSpec) {
 	*out = *in
 	if in.Annotations != nil {

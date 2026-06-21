@@ -1,0 +1,202 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: integronasyncapis.integron.integronlabs.io
+spec:
+  group: integron.integronlabs.io
+  names:
+    kind: IntegronAsyncAPI
+    listKind: IntegronAsyncAPIList
+    plural: integronasyncapis
+    singular: integronasyncapi
+    shortNames:
+      - iasync
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Replicas
+          type: integer
+          jsonPath: .spec.replicas
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyReplicas
+        - name: Group
+          type: string
+          jsonPath: .spec.kafka.groupID
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: >-
+            IntegronAsyncAPI is a no-code, event-driven API: an AsyncAPI document
+            whose operations consume Kafka messages and run x-integron-steps
+            workflows. The operator runs a consumer-only Deployment; no Service
+            or Ingress is created.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - kafka
+              properties:
+                asyncapi:
+                  type: string
+                  description: Inline AsyncAPI 3 document (YAML or JSON) with x-integron-steps.
+                asyncapiConfigMapRef:
+                  type: object
+                  description: Reference to an existing ConfigMap holding the spec.
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                    key:
+                      type: string
+                      default: asyncapi.yaml
+                kafka:
+                  type: object
+                  required:
+                    - brokers
+                  properties:
+                    brokers:
+                      type: array
+                      minItems: 1
+                      items:
+                        type: string
+                    groupID:
+                      type: string
+                      description: Consumer group. Defaults to the resource name.
+                    topics:
+                      type: array
+                      description: >-
+                        Topics to subscribe to. When empty, every topic declared
+                        by the AsyncAPI document's channels is used.
+                      items:
+                        type: string
+                    tls:
+                      type: object
+                      required:
+                        - enabled
+                      properties:
+                        enabled:
+                          type: boolean
+                        insecureSkipVerify:
+                          type: boolean
+                        caSecretRef:
+                          type: object
+                          required:
+                            - name
+                            - key
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                    sasl:
+                      type: object
+                      required:
+                        - mechanism
+                        - usernameSecretRef
+                        - passwordSecretRef
+                      properties:
+                        mechanism:
+                          type: string
+                          enum: [PLAIN, SCRAM-SHA-256, SCRAM-SHA-512]
+                        usernameSecretRef:
+                          type: object
+                          required:
+                            - name
+                            - key
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        passwordSecretRef:
+                          type: object
+                          required:
+                            - name
+                            - key
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                    minBytes:
+                      type: integer
+                      format: int32
+                    maxBytes:
+                      type: integer
+                      format: int32
+                    batchSize:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                    maxWaitMillis:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                image:
+                  type: string
+                  default: ghcr.io/integronlabs/integron-k3s/async-engine:latest
+                imagePullPolicy:
+                  type: string
+                  default: IfNotPresent
+                  enum: [Always, IfNotPresent, Never]
+                replicas:
+                  type: integer
+                  format: int32
+                  default: 1
+                  minimum: 0
+                resources:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                  format: int64
+                readyReplicas:
+                  type: integer
+                  format: int32
+                topics:
+                  type: array
+                  items:
+                    type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                      - reason
+                      - lastTransitionTime
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
