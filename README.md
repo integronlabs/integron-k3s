@@ -27,12 +27,14 @@ a hash of the spec).
 
 | Path | What it is |
 | --- | --- |
-| `api/v1alpha1` | The `IntegronAPI` CRD Go types |
-| `internal/controller` | The reconciler |
+| `api/v1alpha1` | The `IntegronAPI` and `IntegronAsyncAPI` CRD Go types |
+| `internal/controller` | The reconcilers |
 | `cmd/manager` | Operator entrypoint |
+| `cmd/async-consumer` | The Kafka consumer that runs `integron-async` workflows per message |
 | `Dockerfile` | Builds the operator image |
 | `Dockerfile.engine` | Builds the integron engine image (`go install …@INTEGRON_VERSION`) |
-| `config/` | CRD, RBAC, operator Deployment, sample, kustomization |
+| `Dockerfile.async` | Builds the async consumer image |
+| `config/` | CRDs, RBAC, operator Deployment, samples, kustomization |
 
 ## Quick start
 
@@ -175,6 +177,108 @@ thousands of mostly-idle APIs onto a node, the next step would be either
 scale-to-zero (e.g. KEDA/Knative) or a shared multi-spec engine — happy to
 explore either; it's not wired up today.
 
+## Event-driven (async) APIs over Kafka
+
+The same no-code model also runs **event-driven**:
+[integron-async](https://github.com/integronlabs/integron-async) interprets an
+**AsyncAPI 3** document where each operation's `x-integron-steps` pipeline runs
+once **per message consumed from a Kafka topic** (the operation's channel
+address). Upstream, integron-async is built for AWS Lambda — it consumes Kafka
+*indirectly*, through EventBridge Pipes. `integron-k3s` adapts that engine to a
+plain cluster: a small consumer (`cmd/async-consumer`) drives the **same engine**
+from a native Kafka **consumer group**, so no AWS is involved.
+
+You apply an `IntegronAsyncAPI` and the operator provisions:
+
+```
+IntegronAsyncAPI (your AsyncAPI + x-integron-steps + Kafka config)
+   └─ operator reconciles ─▶ ConfigMap (spec)
+                            ▶ Deployment (async-consumer, mounts spec)
+```
+
+No Service or Ingress — it is **consumer-only**. The consumer subscribes to the
+spec's topics, and for each batch it maps messages to the engine's record type,
+runs `ProcessBatch`, and commits offsets **selectively**: any offset the engine
+reports as failed is left uncommitted so Kafka redelivers it. Processing is
+**at-least-once** — make steps idempotent. Scale with `spec.replicas`: all
+replicas join one consumer group, so Kafka balances partitions across them
+(replicas beyond the partition count sit idle).
+
+```sh
+make sample-async              # applies config/samples/dogfacts-async.yaml
+kubectl get integronasyncapi   # shows replicas / ready / group
+```
+
+A minimal `IntegronAsyncAPI`:
+
+```yaml
+apiVersion: integron.integronlabs.io/v1alpha1
+kind: IntegronAsyncAPI
+metadata:
+  name: dogfacts-async
+spec:
+  replicas: 1
+  kafka:
+    brokers: [kafka.default.svc:9092]
+    # groupID defaults to the resource name; topics default to the spec's channels
+  asyncapi: |
+    asyncapi: 3.0.0
+    info: { title: Dog Facts (async), version: 1.0.0 }
+    channels:
+      dogFactRequests:
+        address: dogfact-requests-topic        # the Kafka topic
+    operations:
+      onFactRequest:
+        action: receive
+        channel: { $ref: '#/channels/dogFactRequests' }
+        x-integron-steps:
+          - name: fetchFact
+            type: http
+            url: 'https://dogapi.dog/api/v2/facts?limit=$.message.payload.amount'
+            method: GET
+            responses:
+              '200': { output: { response: $.body }, next: "" }
+          - name: error
+            type: error
+            next: ""
+```
+
+The message payload is available to steps as `$.message.payload.*`.
+
+### Async spec fields
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `spec.asyncapi` | — | Inline AsyncAPI 3 document (with `x-integron-steps`). |
+| `spec.asyncapiConfigMapRef` | — | Alternatively, reference an existing ConfigMap (`name`, `key`). |
+| `spec.kafka.brokers` | — | **Required.** Bootstrap broker addresses (`host:port`). |
+| `spec.kafka.groupID` | `<name>` | Consumer group shared by all replicas. |
+| `spec.kafka.topics` | spec channels | Restrict subscription; defaults to every channel address. |
+| `spec.kafka.tls` | — | `enabled`, `insecureSkipVerify`, `caSecretRef` (`name`, `key`). |
+| `spec.kafka.sasl` | — | `mechanism` (`PLAIN`/`SCRAM-SHA-256`/`SCRAM-SHA-512`), `usernameSecretRef`, `passwordSecretRef`. |
+| `spec.kafka.batchSize` | `100` | Max messages per `ProcessBatch` call. |
+| `spec.kafka.maxWaitMillis` | `1000` | Max time to fill a batch before processing. |
+| `spec.kafka.minBytes` / `maxBytes` | `1` / `1 MiB` | Fetch sizing. |
+| `spec.image` | `…/async-engine:latest` | Consumer image to run. |
+| `spec.replicas` | `1` | Consumer pod count (joins the group). |
+| `spec.resources` | — | Standard pod resource requirements. |
+
+Exactly one of `spec.asyncapi` / `spec.asyncapiConfigMapRef` is required.
+
+Connecting to a TLS + SASL broker (e.g. managed Kafka) pulls credentials from a
+Secret in the same namespace:
+
+```yaml
+spec:
+  kafka:
+    brokers: [pkc-xxxx.region.aws.confluent.cloud:9092]
+    tls: { enabled: true }
+    sasl:
+      mechanism: PLAIN
+      usernameSecretRef: { name: kafka-creds, key: username }
+      passwordSecretRef: { name: kafka-creds, key: password }
+```
+
 ## Develop the operator
 
 ```sh
@@ -184,6 +288,6 @@ make run             # run against your current kubeconfig (out-of-cluster)
 make test vet
 ```
 
-> Note: `api/v1alpha1/zz_generated.deepcopy.go` and
-> `config/crd/...integronapis.yaml` are maintained by hand to mirror what
-> `controller-gen` would produce — keep them in step with `*_types.go`.
+> Note: `api/v1alpha1/zz_generated.deepcopy.go` and the `config/crd/*.yaml`
+> manifests are maintained by hand to mirror what `controller-gen` would
+> produce — keep them in step with `*_types.go`.

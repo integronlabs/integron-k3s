@@ -1,0 +1,70 @@
+apiVersion: integron.integronlabs.io/v1alpha1
+kind: IntegronAsyncAPI
+metadata:
+  name: dogfacts-async
+  namespace: default
+spec:
+  replicas: 1
+  # image: ghcr.io/integronlabs/integron-k3s/async-engine:latest   # default
+  kafka:
+    brokers:
+      - kafka.default.svc:9092
+    # groupID defaults to the resource name (dogfacts-async)
+    # topics default to every channel address in the AsyncAPI document below
+    # Plaintext here; for managed Kafka add tls: / sasl: with Secret refs.
+    batchSize: 100
+    maxWaitMillis: 1000
+  asyncapi: |
+    asyncapi: 3.0.0
+    info:
+      title: Integron Dog Facts (async)
+      version: 1.0.0
+      description: Consume fact requests from Kafka and fetch dog facts.
+    channels:
+      dogFactRequests:
+        address: dogfact-requests-topic
+        messages:
+          FactRequest:
+            payload:
+              type: object
+              properties:
+                amount:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+    operations:
+      onFactRequest:
+        action: receive
+        channel:
+          $ref: '#/channels/dogFactRequests'
+        x-integron-steps:
+          - name: fetchFact
+            type: http
+            url: 'https://dogapi.dog/api/v2/facts?limit=$.message.payload.amount'
+            method: GET
+            responses:
+              '200':
+                output:
+                  response: $.body
+                  status: $.status
+                next: "arrayTransform"
+          - name: arrayTransform
+            type: transformarray
+            input: $.fetchFact.response.data
+            output:
+              fact: $.attributes.body
+              id: $.id
+            next: "removeNull"
+          - name: removeNull
+            type: removenull
+            input: $.arrayTransform
+            next: "responseMarshal"
+          - name: responseMarshal
+            type: transformobject
+            output:
+              body:
+                data: $.removeNull
+            next: ""
+          - name: error
+            type: error
+            next: ""

@@ -2,6 +2,7 @@
 
 OPERATOR_IMG ?= ghcr.io/integronlabs/integron-k3s/operator:latest
 ENGINE_IMG   ?= ghcr.io/integronlabs/integron-k3s/engine:latest
+ASYNC_IMG    ?= ghcr.io/integronlabs/integron-k3s/async-engine:latest
 INTEGRON_VERSION ?= v0.2.0
 
 .PHONY: help
@@ -36,8 +37,12 @@ docker-operator: ## Build the operator image.
 docker-engine: ## Build the integron engine image.
 	docker build -t $(ENGINE_IMG) -f Dockerfile.engine --build-arg INTEGRON_VERSION=$(INTEGRON_VERSION) .
 
+.PHONY: docker-async
+docker-async: ## Build the integron async consumer image.
+	docker build -t $(ASYNC_IMG) -f Dockerfile.async .
+
 .PHONY: docker-build
-docker-build: docker-operator docker-engine ## Build both images.
+docker-build: docker-operator docker-engine docker-async ## Build all images.
 
 .PHONY: install
 install: ## Install CRD, RBAC and operator into the current cluster.
@@ -51,7 +56,12 @@ uninstall: ## Remove the operator and CRD from the cluster.
 sample: ## Apply the dog facts sample IntegronAPI.
 	kubectl apply -f config/samples/dogfacts.yaml
 
+.PHONY: sample-async
+sample-async: ## Apply the async dog facts sample IntegronAsyncAPI.
+	kubectl apply -f config/samples/dogfacts-async.yaml
+
 .PHONY: k3s-import
 k3s-import: docker-build ## Import locally-built images into k3s containerd.
 	docker save $(OPERATOR_IMG) | sudo k3s ctr images import -
 	docker save $(ENGINE_IMG) | sudo k3s ctr images import -
+	docker save $(ASYNC_IMG) | sudo k3s ctr images import -

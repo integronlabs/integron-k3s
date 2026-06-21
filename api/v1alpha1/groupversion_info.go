@@ -22,4 +22,5 @@ var AddToScheme = SchemeBuilder.AddToScheme
 
 func init() {
 	SchemeBuilder.Register(&IntegronAPI{}, &IntegronAPIList{})
+	SchemeBuilder.Register(&IntegronAsyncAPI{}, &IntegronAsyncAPIList{})
 }
