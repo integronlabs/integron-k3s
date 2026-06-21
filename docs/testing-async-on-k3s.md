@@ -152,6 +152,13 @@ make uninstall           # removes operator + CRDs
   `kafka.default.svc:9092` resolves and the Kafka pod is `Ready`. The advertised
   listener must be the Service DNS (`kafka.default.svc.cluster.local`), as set
   above — an incorrect advertised listener is the usual cause.
+- **Consumer is a `Stable` group member but `--members` shows `#PARTITIONS 0`:**
+  it joined before the topic existed and cached an empty assignment. The consumer
+  enables kafka-go's partition watcher, so it self-heals within
+  ~15s of the topic being created — give it a moment, or
+  `kubectl rollout restart deploy/<name>` to force it immediately. For
+  production, prefer **pre-creating topics** over relying on broker
+  auto-creation so partitions exist before the consumer starts.
 - **Offset reported as failed and redelivered:** the workflow step failed. This
   is the at-least-once redelivery path working, but it usually means a step's
   JSONPath (e.g. `$.message.payload.amount`) doesn't match your message shape,
